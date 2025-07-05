@@ -92,86 +92,6 @@ exports.createCheckoutSessionWeb = asyncHandler(async (req, res) => {
 // @desc    Create Stripe Checkout session (flutter)
 // @route   POST /api/payments/flutter-checkout
 // @access  Private (student)
-// exports.createCheckoutSessionFlutter = asyncHandler(async (req, res) => {
-//   const { courseId } = req.body;
-
-//   // 1. Validate courseId
-//   if (!courseId) {
-//     return res.status(400).json({ message: 'Course ID is required' });
-//   }
-
-//   // 2. Verify course exists
-//   const course = await Course.findById(courseId);
-//   if (!course) {
-//     return res.status(404).json({ message: 'Course not found' });
-//   }
-
-//   // 3. Verify user is a student
-//   // if (req.user.role !== 'student') {
-//   //   return res.status(403).json({ message: 'Only students can enroll in courses' });
-//   // }
-
-//   // 4. Check if already enrolled
-//   const existingEnrollment = await Enrollment.findOne({ user: req.user._id, course: courseId });
-//   if (existingEnrollment && existingEnrollment.paymentStatus === 'completed') {
-//     return res.status(400).json({ message: 'You are already enrolled in this course' });
-//   }
-
-//   // 5. Create Stripe Checkout session
-//   try {
-//     const session = await stripe.checkout.sessions.create({
-//       payment_method_types: ['card'],
-//       line_items: [
-//         {
-//           name : req.user.name,  
-//           price_data: {
-//             currency: 'egp',
-//             product_data: {
-//               name: course.title,
-//               description: `Access to ${course.title} course`,
-//             },
-//             unit_amount: Math.round(course.price * 100), // Price in cents
-//           },
-//           quantity: 1,
-//         },
-//       ],
-//       mode: 'payment',
-//      // success_url: `${process.env.CLIENT_DOMAIN}/payment/success?session_id={CHECKOUT_SESSION_ID}`, //${req.protocol}://${req.get('host')}
-//      // cancel_url: `${process.env.CLIENT_DOMAIN}/payment/cancel`,
-//       customer_email : req.user.email,
-//       client_reference_id: req.user._id.toString(), // Store user ID
-//       metadata: { courseId: courseId.toString() }, // Store course ID
-//     });
-
-//     // 6. Create pending enrollment
-//     await Enrollment.create({
-//       user: req.user._id,
-//       course: courseId,
-//       paymentStatus: 'pending',
-//       stripePaymentId: session.id,
-//     });
-
-//     // 7. Update course's enrolledStudents && User's enrolledCourses
-//     await Course.findByIdAndUpdate(courseId, { $addToSet: { enrolledStudents: req.user._id } });
-//     await User.findByIdAndUpdate(req.user._id, { $addToSet: { enrolledCourses: courseId } });
-    
-
-//     res.status(200).json({
-//       success: true,
-//       message: 'Checkout session created',
-//       sessionId: session.id,
-//       checkoutUrl: session.url,
-//     });
-//   } catch (error) {
-//     console.error('Stripe error:', error);
-//     return res.status(500).json({ message: 'Failed to create checkout session', error: error.message });
-//   }
-// });
-
-
-
-
-
 exports.createCheckoutSessionFlutter = asyncHandler(async (req, res) => {
   const { courseId } = req.body;
 
@@ -186,18 +106,24 @@ exports.createCheckoutSessionFlutter = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: 'Course not found' });
   }
 
-  // 3. Check if already enrolled
+  // 3. Verify user is a student
+  // if (req.user.role !== 'student') {
+  //   return res.status(403).json({ message: 'Only students can enroll in courses' });
+  // }
+
+  // 4. Check if already enrolled
   const existingEnrollment = await Enrollment.findOne({ user: req.user._id, course: courseId });
   if (existingEnrollment && existingEnrollment.paymentStatus === 'completed') {
     return res.status(400).json({ message: 'You are already enrolled in this course' });
   }
 
-  // 4. Create Stripe Checkout session
+  // 5. Create Stripe Checkout session
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       line_items: [
         {
+          name : req.user.name,  
           price_data: {
             currency: 'egp',
             product_data: {
@@ -210,17 +136,14 @@ exports.createCheckoutSessionFlutter = asyncHandler(async (req, res) => {
         },
       ],
       mode: 'payment',
-      customer_email: req.user.email,
+      success_url: `${process.env.CLIENT_DOMAIN}/payment/flutter-success?session_id={CHECKOUT_SESSION_ID}`, //${req.protocol}://${req.get('host')}
+      cancel_url: `${process.env.CLIENT_DOMAIN}/payment/flutter-cancel`,
+      customer_email : req.user.email,
       client_reference_id: req.user._id.toString(), // Store user ID
       metadata: { courseId: courseId.toString() }, // Store course ID
-      // Do not include success_url or cancel_url
-      // Optionally, use automatic redirects for mobile (explained below)
-      payment_intent_data: {
-        setup_future_usage: 'off_session', // Optional: for saving payment method
-      },
     });
 
-    // 5. Create pending enrollment
+    // 6. Create pending enrollment
     await Enrollment.create({
       user: req.user._id,
       course: courseId,
@@ -228,15 +151,16 @@ exports.createCheckoutSessionFlutter = asyncHandler(async (req, res) => {
       stripePaymentId: session.id,
     });
 
-    // 6. Update course's enrolledStudents and User's enrolledCourses
+    // 7. Update course's enrolledStudents && User's enrolledCourses
     await Course.findByIdAndUpdate(courseId, { $addToSet: { enrolledStudents: req.user._id } });
     await User.findByIdAndUpdate(req.user._id, { $addToSet: { enrolledCourses: courseId } });
+    
 
     res.status(200).json({
       success: true,
       message: 'Checkout session created',
       sessionId: session.id,
-      // Return the session ID instead of a checkout URL
+      checkoutUrl: session.url,
     });
   } catch (error) {
     console.error('Stripe error:', error);
