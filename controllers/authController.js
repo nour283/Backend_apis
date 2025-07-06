@@ -8,14 +8,15 @@ const User = require("../models/User.js");
  * @access public
  */
 
-
 exports.registerUser = asyncHandler(async (req, res) => {
   const { userName, email, password, role } = req.body;
 
   const userExists = await User.findOne({ email });
   if (userExists) {
-    res.status(400);
-    throw new Error('User already exists');
+    return res.status(400).json({
+      success: false,
+      message: 'User already exists',
+    });
   }
 
   const user = await User.create({
@@ -29,6 +30,7 @@ exports.registerUser = asyncHandler(async (req, res) => {
     const token = user.generateAuthToken();
 
     res.status(201).json({
+      success: true,
       message: 'You registered successfully',
       _id: user._id,
       userName: user.userName,
@@ -38,8 +40,10 @@ exports.registerUser = asyncHandler(async (req, res) => {
       token,
     });
   } else {
-    res.status(400);
-    throw new Error('Invalid user data');
+    res.status(400).json({
+      success: false,
+      message: 'Invalid user data',
+    });
   }
 });
 
