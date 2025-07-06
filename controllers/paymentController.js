@@ -238,6 +238,47 @@ exports.handleWebhook = asyncHandler(async (req, res) => {
 });
 
 
+
+// @desc    Verify enrollment and redirect after payment
+// @route   GET /api/payments/verify
+// @access  Private (student)
+exports.verifyPayment = asyncHandler(async (req, res) => {
+  const { session_id } = req.query;
+
+  if (!session_id) {
+    return res.status(400).json({ message: 'Session ID is required' });
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+    if (session.payment_status === 'paid') {
+      const enrollment = await Enrollment.findOne({
+        stripePaymentId: session_id,
+        user: req.user._id,
+      }).populate('course');
+
+      if (!enrollment) {
+        return res.status(404).json({ message: 'Enrollment not found' });
+      }
+
+      if (enrollment.paymentStatus === 'completed') {
+        return res.status(200).json({
+          success: true,
+          message: 'Payment verified, you are enrolled',
+          course: enrollment.course,
+        });
+      }
+    }
+    return res.status(400).json({ message: 'Payment not completed' });
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    return res.status(500).json({ message: 'Failed to verify payment', error: error.message });
+  }
+});
+
+
+
+
 // @desc    check Enrollment of a course for a user
 // @route   GET /api/payments/check/:courseId
 // @access  Private (student)
