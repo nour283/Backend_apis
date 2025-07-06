@@ -153,7 +153,7 @@ exports.createPaymentIntentFlutter = asyncHandler(async (req, res) => {
 
 
 // @desc    Handle Stripe webhook for payment completion
-// @route   POST /api/payments/webhook
+// @route   POST /webhook
 // @access  Public (Stripe)
 exports.handleWebhook = asyncHandler(async (req, res) => {
   const sig = req.headers['stripe-signature'];
@@ -164,69 +164,78 @@ exports.handleWebhook = asyncHandler(async (req, res) => {
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
-      process.env.STRIPE_WEBHOOK_SECRET // Set in .env for production
+      process.env.STRIPE_WEBHOOK_SECRET // Set in .env
     );
   } catch (error) {
-    console.error('Webhook signature verification failed:', error);
-    return res.status(400).json({ message: 'Webhook error' });
+    console.error('Webhook signature verification failed:', error.message);
+    return res.status(400).json({ message: 'Webhook signature verification failed' });
   }
 
-  // 2. Handle payment_intent.succeeded event
-  if (event.type === 'payment_intent.succeeded') {
-    const paymentIntent = event.data.object;
-    const userId = paymentIntent.metadata.userId; // From metadata in Payment Intent
-    const courseId = paymentIntent.metadata.courseId; // From metadata in Payment Intent
+  // 2. Process relevant events
+  try {
+    let userId, courseId, paymentId;
 
-    try {
-      // Update enrollment to completed
+    if (event.type === 'payment_intent.succeeded') {
+      const paymentIntent = event.data.object;
+      userId = paymentIntent.metadata.userId;
+      courseId = paymentIntent.metadata.courseId;
+      paymentId = paymentIntent.id;
+    } else if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      userId = session.client_reference_id;
+      courseId = session.metadata.courseId;
+      paymentId = session.id;
+    } else if (event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object;
+      userId = paymentIntent.metadata.userId;
+      courseId = paymentIntent.metadata.courseId;
+      paymentId = paymentIntent.id;
+
+      // Update enrollment to failed
       const enrollment = await Enrollment.findOneAndUpdate(
-        { stripePaymentId: paymentIntent.id }, // Use Payment Intent ID
+        { stripePaymentId: paymentId },
+        { paymentStatus: 'failed' },
+        { new: true }
+      );
+
+      if (!enrollment) {
+        console.error(`Enrollment not found for Payment Intent: ${paymentId}`);
+        return res.status(404).json({ message: 'Enrollment not found' });
+      }
+
+      console.log(`Payment failed for user ${userId} in course ${courseId}`);
+      return res.status(200).json({ received: true });
+    } else {
+      // Ignore unhandled events
+      return res.status(200).json({ received: true });
+    }
+
+    // 3. Update enrollment for successful payments
+    if (userId && courseId && paymentId) {
+      const enrollment = await Enrollment.findOneAndUpdate(
+        { stripePaymentId: paymentId },
         { paymentStatus: 'completed', enrolledAt: new Date() },
         { new: true }
       );
 
       if (!enrollment) {
-        console.error('Enrollment not found for Payment Intent:', paymentIntent.id);
+        console.error(`Enrollment not found for payment ID: ${paymentId}`);
         return res.status(404).json({ message: 'Enrollment not found' });
       }
 
       console.log(`Enrolled user ${userId} in course ${courseId}`);
-    } catch (error) {
-      console.error('Enrollment update error:', error);
-      return res.status(500).json({ message: 'Failed to process enrollment' });
+    } else {
+      console.error('Missing userId or courseId in event data');
+      return res.status(400).json({ message: 'Invalid event data' });
     }
-  }
-
-  // 3. Optionally keep checkout.session.completed for backward compatibility
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const userId = session.client_reference_id;
-    const courseId = session.metadata.courseId;
-
-    try {
-      // Update enrollment to completed
-      const enrollment = await Enrollment.findOneAndUpdate(
-        { stripePaymentId: session.id },
-        { paymentStatus: 'completed', enrolledAt: new Date() },
-        { new: true }
-      );
-
-      if (!enrollment) {
-        console.error('Enrollment not found for session:', session.id);
-        return res.status(404).json({ message: 'Enrollment not found' });
-      }
-
-      console.log(`Enrolled user ${userId} in course ${courseId}`);
-    } catch (error) {
-      console.error('Enrollment update error:', error);
-      return res.status(500).json({ message: 'Failed to process enrollment' });
-    }
+  } catch (error) {
+    console.error('Webhook processing error:', error.message);
+    return res.status(500).json({ message: 'Failed to process webhook event' });
   }
 
   // 4. Respond to Stripe
   res.status(200).json({ received: true });
 });
-
 
 
 // @desc    check Enrollment of a course for a user
