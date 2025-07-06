@@ -94,62 +94,62 @@ exports.createCheckoutSessionWeb = asyncHandler(async (req, res) => {
 // @access  Private (student)
 
 
-// exports.createPaymentIntentFlutter = asyncHandler(async (req, res) => {
-//   const { courseId } = req.body;
+exports.createPaymentIntentFlutter = asyncHandler(async (req, res) => {
+  const { courseId } = req.body;
 
-//   // 1. Validate courseId
-//   if (!courseId) {
-//     return res.status(400).json({ message: 'Course ID is required' });
-//   }
+  // 1. Validate courseId
+  if (!courseId) {
+    return res.status(400).json({ message: 'Course ID is required' });
+  }
 
-//   // 2. Verify course exists
-//   const course = await Course.findById(courseId);
-//   if (!course) {
-//     return res.status(404).json({ message: 'Course not found' });
-//   }
+  // 2. Verify course exists
+  const course = await Course.findById(courseId);
+  if (!course) {
+    return res.status(404).json({ message: 'Course not found' });
+  }
 
-//   // 3. Check if already enrolled
-//   const existingEnrollment = await Enrollment.findOne({ user: req.user._id, course: courseId });
-//   if (existingEnrollment && existingEnrollment.paymentStatus === 'completed') {
-//     return res.status(400).json({ message: 'You are already enrolled in this course' });
-//   }
+  // 3. Check if already enrolled
+  const existingEnrollment = await Enrollment.findOne({ user: req.user._id, course: courseId });
+  if (existingEnrollment && existingEnrollment.paymentStatus === 'completed') {
+    return res.status(400).json({ message: 'You are already enrolled in this course' });
+  }
 
-//   // 4. Create Stripe Payment Intent
-//   try {
-//     const paymentIntent = await stripe.paymentIntents.create({
-//       amount: Math.round(course.price * 100), // Price in cents
-//       currency: 'egp', // Ensure your Stripe account supports EGP
-//       payment_method_types: ['card'],
-//       description: `Access to ${course.title} course`,
-//       metadata: {
-//         courseId: courseId.toString(),
-//         userId: req.user._id.toString(),
-//       },
-//       receipt_email: req.user.email,
-//     });
+  // 4. Create Stripe Payment Intent
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(course.price * 100), // Price in cents
+      currency: 'egp', // Ensure your Stripe account supports EGP
+      payment_method_types: ['card'],
+      description: `Access to ${course.title} course`,
+      metadata: {
+        courseId: courseId.toString(),
+        userId: req.user._id.toString(),
+      },
+      receipt_email: req.user.email,
+    });
 
-//     // 5. Create pending enrollment
-//     await Enrollment.create({
-//       user: req.user._id,
-//       course: courseId,
-//       paymentStatus: 'pending',
-//       stripePaymentId: paymentIntent.id,
-//     });
+    // 5. Create pending enrollment
+    await Enrollment.create({
+      user: req.user._id,
+      course: courseId,
+      paymentStatus: 'pending',
+      stripePaymentId: paymentIntent.id,
+    });
 
-//     // 6. Update course's enrolledStudents and User's enrolledCourses
-//     await Course.findByIdAndUpdate(courseId, { $addToSet: { enrolledStudents: req.user._id } });
-//     await User.findByIdAndUpdate(req.user._id, { $addToSet: { enrolledCourses: courseId } });
+    // 6. Update course's enrolledStudents and User's enrolledCourses
+    await Course.findByIdAndUpdate(courseId, { $addToSet: { enrolledStudents: req.user._id } });
+    await User.findByIdAndUpdate(req.user._id, { $addToSet: { enrolledCourses: courseId } });
 
-//     res.status(200).json({
-//       success: true,
-//       message: 'Payment Intent created',
-//       clientSecret: paymentIntent.client_secret, // Send client secret to Flutter
-//     });
-//   } catch (error) {
-//     console.error('Stripe error:', error);
-//     return res.status(500).json({ message: 'Failed to create payment intent', error: error.message });
-//   }
-// });
+    res.status(200).json({
+      success: true,
+      message: 'Payment Intent created',
+      clientSecret: paymentIntent.client_secret, // Send client secret to Flutter
+    });
+  } catch (error) {
+    console.error('Stripe error:', error);
+    return res.status(500).json({ message: 'Failed to create payment intent', error: error.message });
+  }
+});
 
 
 // @desc    Handle Stripe webhook for payment completion
